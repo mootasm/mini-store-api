@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Store</title>
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: #f3f4f6; color: #111827; }
+    header { background: #111827; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { margin: 0; font-size: 20px; }
+    .btn { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-secondary { background: #4b5563; }
+    .container { max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .product-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); display: flex; flex-direction: column; justify-content: space-between; }
+    .badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-bottom: 8px; }
+    .price { font-size: 18px; font-weight: bold; color: #059669; margin: 8px 0; }
+    input, select, textarea { width: 100%; padding: 8px 10px; margin: 6px 0 12px; border: 1px solid #d1d5db; border-radius: 6px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .hidden { display: none; }
+    .msg { padding: 10px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+    .msg-error { background: #fee2e2; color: #991b1b; }
+    .msg-success { background: #d1fae5; color: #065f46; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🛒 Mini Store</h1>
+    <div class="row">
+      <span id="userInfo"></span>
+      <button id="authBtn" class="btn" onclick="toggleAuthBox()">تسجيل الدخول</button>
+      <button id="logoutBtn" class="btn btn-danger hidden" onclick="logout()">خروج</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="alertBox" class="msg hidden"></div>
+
+    <!-- تسجيل الدخول / حساب جديد -->
+    <div id="authBox" class="card hidden">
+      <h3>تسجيل الدخول (الأدمن: admin@store.com / admin123)</h3>
+      <input id="loginEmail" type="email" placeholder="البريد الإلكتروني" value="admin@store.com" />
+      <input id="loginPassword" type="password" placeholder="كلمة المرور" value="admin123" />
+      <button class="btn" onclick="login()">دخول</button>
+    </div>
+
+    <!-- لوحة الأدمن -->
+    <div id="adminPanel" class="card hidden">
+      <h3>⚙️ لوحة تحكم الأدمن</h3>
+      <div class="row" style="margin-bottom: 16px;">
+        <input id="catName" placeholder="اسم القسم الجديد (مثلاً: Electronics)" style="flex:1; margin:0;" />
+        <button class="btn" onclick="createCategory()">+ إضافة قسم</button>
+      </div>
+      <hr style="border:none; border-top:1px solid #e5e7eb; margin:16px 0;" />
+      <h4>إضافة منتج جديد</h4>
+      <input id="prodName" placeholder="اسم المنتج" />
+      <input id="prodDesc" placeholder="وصف المنتج" />
+      <div class="row">
+        <input id="prodPrice" type="number" placeholder="السعر" style="flex:1;" />
+        <input id="prodStock" type="number" placeholder="الكمية (Stock)" style="flex:1;" />
+        <select id="prodCategory" style="flex:1;"></select>
+      </div>
+      <button class="btn" onclick="createProduct()">+ إضافة منتج</button>
+    </div>
+
+    <!-- الأقسام -->
+    <div class="row" style="margin-bottom: 16px;" id="categoriesBar"></div>
+
+    <!-- المنتجات -->
+    <div class="grid" id="productsGrid"></div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('token') || '';
+    let user = JSON.parse(localStorage.getItem('user') || 'null');
+    let allProducts = [];
+
+    function showMsg(text, isError = false) {
+      const box = document.getElementById('alertBox');
+      box.textContent = text;
+      box.className = `msg ${isError ? 'msg-error' : 'msg-success'}`;
+      setTimeout(() => box.classList.add('hidden'), 3000);
+    }
+
+    function toggleAuthBox() {
+      document.getElementById('authBox').classList.toggle('hidden');
+    }
+
+    function updateUI() {
+      const isAdmin = user && user.role === 'admin';
+      document.getElementById('userInfo').textContent = user ? `مرحباً، ${user.name} (${user.role})` : '';
+      document.getElementById('authBtn').classList.toggle('hidden', !!user);
+      document.getElementById('logoutBtn').classList.toggle('hidden', !user);
+      document.getElementById('adminPanel').classList.toggle('hidden', !isAdmin);
+      if (user) document.getElementById('authBox').classList.add('hidden');
+    }
+
+    async function login() {
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) return showMsg(data.message, true);
+      token = data.data.token;
+      user = data.data.user;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      updateUI();
+      loadData();
+      showMsg('تم تسجيل الدخول بنجاح');
+    }
+
+    function logout() {
+      token = '';
+      user = null;
+      localStorage.clear();
+      updateUI();
+      renderProducts(allProducts);
+    }
+
+    async function createCategory() {
+      const name = document.getElementById('catName').value;
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (!res.ok) return showMsg(data.message, true);
+      document.getElementById('catName').value = '';
+      showMsg('تم إضافة القسم');
+      loadData();
+    }
+
+    async function createProduct() {
+      const body = {
+        name: document.getElementById('prodName').value,
+        description: document.getElementById('prodDesc').value,
+        price: Number(document.getElementById('prodPrice').value),
+        stock: Number(document.getElementById('prodStock').value),
+        categoryId: Number(document.getElementById('prodCategory').value)
+      };
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) return showMsg(data.message, true);
+      document.getElementById('prodName').value = '';
+      document.getElementById('prodDesc').value = '';
+      document.getElementById('prodPrice').value = '';
+      document.getElementById('prodStock').value = '';
+      showMsg('تم إضافة المنتج');
+      loadData();
+    }
+
+    async function deleteProduct(id) {
+      const res = await fetch(`/api/products/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return showMsg('فشل الحذف', true);
+      showMsg('تم حذف المنتج');
+      loadData();
+    }
+
+    function filterByCategory(catId) {
+      if (!catId) return renderProducts(allProducts);
+      renderProducts(allProducts.filter(p => p.categoryId === catId));
+    }
+
+    function renderProducts(products) {
+      const grid = document.getElementById('productsGrid');
+      if (!products.length) {
+        grid.innerHTML = '<p>لا توجد منتجات حالياً. سجّل دخول كأدمن وأضف أول منتج!</p>';
+        return;
+      }
+      const isAdmin = user && user.role === 'admin';
+      grid.innerHTML = products.map(p => `
+        <div class="product-card">
+          <div>
+            <span class="badge">${p.category ? p.category.name : 'بدون قسم'}</span>
+            <h3 style="margin:4px 0;">${p.name}</h3>
+            <p style="color:#4b5563; font-size:14px;">${p.description || ''}</p>
+          </div>
+          <div>
+            <div class="price">$${p.price}</div>
+            <div style="font-size:13px; color:#6b7280; margin-bottom:10px;">المتاح: ${p.stock}</div>
+            ${isAdmin ? `<button class="btn btn-danger" onclick="deleteProduct(${p.id})">حذف</button>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function loadData() {
+      const [catRes, prodRes] = await Promise.all([
+        fetch('/api/categories'),
+        fetch('/api/products')
+      ]);
+      const cats = (await catRes.json()).data || [];
+      allProducts = (await prodRes.json()).data || [];
+
+      document.getElementById('categoriesBar').innerHTML =
+        `<button class="btn btn-secondary" onclick="filterByCategory(null)">الكل</button>` +
+        cats.map(c => `<button class="btn btn-secondary" onclick="filterByCategory(${c.id})">${c.name}</button>`).join('');
+
+      document.getElementById('prodCategory').innerHTML =
+        cats.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+      renderProducts(allProducts);
+    }
+
+    updateUI();
+    loadData();
+  </script>
+</body>
+</html>
